@@ -25,13 +25,10 @@ BOT_AUTHOR_THRESHOLD = 5
 BOT_VOTER_THRESHOLD = 5
 BOT_TRANSFER_THRESHOLD = 5
 
-def process_operation(db, operation):
+def process_operation(db, operation, block):
     logging.info("Processing operation %s", operation['type'])
     if operation['type'] == "account_create":
-        if db.get(operation['name']):
-            db.set(operation['name'], operation[''])
-        else:
-            db.set(operation['name'], )
+        db.set(operation['name'], block['timestamp'])
     elif operation['type'] == "vote":
         if db.get(operation['voter']):
             db.set(operation['voter'], db.get(operation['voter']) + 1)
@@ -55,10 +52,10 @@ def process_operation(db, operation):
 
 def fill(databases, chain, first_block, last_block):
     for operation in chain.history(start_block = first_block, end_block = last_block, filter_by = FILTERED_OPERATIONS):
-        process_operation(databases[operation['type']], operation)
+        process_operation(databases[operation['type']], operation, chain.steem.get_block(start_block))
 
 def analyze(databases, result):
-    for account in databases['account_create']:
+    for account in databases['account_create'].getall():
         if (databases['vote'].get(account) < BOT_VOTER_THRESHOLD & databases['comment'].get(account) > BOT_AUTHOR_THRESHOLD):
             result.set(account, "comment_bot")
         elif databases['vote'].get(account) >= BOT_VOTER_THRESHOLD &(databases['transfer'].get(account) <= BOT_TRANSFER_THRESHOLD | datbases['transfer_to_vesting'].get(account) <= BOT_TRANSFER_THRESHOLD) & databases['comment'].get(account) < BOT_AUTHOR_THRESHOLD:
