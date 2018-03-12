@@ -25,10 +25,10 @@ BOT_AUTHOR_THRESHOLD = 5
 BOT_VOTER_THRESHOLD = 5
 BOT_TRANSFER_THRESHOLD = 5
 
-def process_operation(db, operation, block):
+def process_operation(db, operation):
     logging.info("Processing operation %s", operation['type'])
     if operation['type'] == "account_create":
-        db.set(operation['name'], block['timestamp'])
+        db.set(operation['name'], operation['timestamp'])
     elif operation['type'] == "vote":
         if db.get(operation['voter']):
             db.set(operation['voter'], db.get(operation['voter']) + 1)
@@ -52,7 +52,7 @@ def process_operation(db, operation, block):
 
 def fill(databases, chain, first_block, last_block):
     for operation in chain.history(start_block = first_block, end_block = last_block, filter_by = FILTERED_OPERATIONS):
-        process_operation(databases[operation['type']], operation, chain.steem.get_block(start_block))
+        process_operation(databases[operation['type']], operation)
 
 def analyze(databases, result):
     for account in databases['account_create'].getall():
