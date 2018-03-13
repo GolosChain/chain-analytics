@@ -17,7 +17,7 @@ from steem.post import Post
 from steembase.exceptions import PostDoesNotExist
 
 STEEM_NODES = [
-#    'localhost',
+    'http://127.0.0.1:8090'
 ]
 
 FILTERED_OPERATIONS = ["vote","comment","transfer","transfer_to_vesting"]
@@ -26,7 +26,6 @@ BOT_VOTER_THRESHOLD = 5
 BOT_TRANSFER_THRESHOLD = 5
 
 def process_operation(db, operation):
-    logging.info("Processing operation %s", operation['type'])
     if operation['type'] == "account_create":
         db.set(operation['name'], operation['timestamp'])
     elif operation['type'] == "vote":
@@ -51,8 +50,10 @@ def process_operation(db, operation):
             db.set(operation['to'], 1)
 
 def fill(databases, chain, first_block, last_block):
-    for operation in chain.history(start_block = first_block, end_block = last_block, filter_by = FILTERED_OPERATIONS):
-        process_operation(databases[operation['type']], operation)
+    for operation in chain.history(start_block = first_block, end_block = last_block):
+        logging.info("Processing operation %s at block %s", operation['type'], operation['block_num'])
+        if operation['type'] in FILTERED_OPERATIONS:
+            process_operation(databases[operation['type']], operation)
 
 def analyze(databases, result):
     for account in databases['account_create'].getall():
@@ -76,7 +77,7 @@ def main():
 
     databases = {'account_create': account_db, 'vote': votes_db, 'comment': comments_db, 'transfer': transfers_db, 'transfer_to_vesting': vesting_transfers_db}
 
-    fill(databases, chain, round((1497970800 - 1451606400) / 3), chain.info()['head_block_number'])
+    fill(databases, chain, first_block = 1, last_block = chain.info()['head_block_number'])
 
     votes_db.dump()
     comments_db.dump()
