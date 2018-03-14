@@ -75,7 +75,12 @@ def main():
 
     logging.getLogger().setLevel(20)
 
-    databases = {'account_create': account_db, 'vote': votes_db, 'comment': comments_db, 'transfer': transfers_db, 'transfer_to_vesting': vesting_transfers_db}
+    databases = {'account_create': account_db,
+                 'vote': votes_db,
+                 'comment': comments_db,
+                 'transfer': transfers_db,
+                 'transfer_to_vesting': vesting_transfers_db
+                }
 
     fill(databases, chain, first_block = 1, last_block = chain.info()['head_block_number'])
 

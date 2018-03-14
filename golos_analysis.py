@@ -16,7 +16,7 @@ from steem.blockchain import Blockchain
 from steem.post import Post
 from steembase.exceptions import PostDoesNotExist
 
-STEEM_NODES = [
+GOLOS_NODES = [
 #    'http://127.0.0.1:8090'
 ]
 
@@ -26,7 +26,7 @@ BOT_VOTER_THRESHOLD = 5
 BOT_TRANSFER_THRESHOLD = 5
 
 def process_memo(db, operation):
-    logging.info("Processing trasfer memo %s", operation['memo'])
+    logging.info("Processing transfer memo %s", operation['memo'])
 
 def process_operation(db, operation):
     if operation['type'] == "account_create":
@@ -68,11 +68,11 @@ def analyze(databases, result):
             result.set(account, "voter_bot")
 
 def main():
-    account_db = pickledb.load("steem_accounts.db", False)
-    votes_db = pickledb.load('steem_account_votes.db', False)
-    comments_db = pickledb.load('steem_account_comments.db', False)
-    transfers_db = pickledb.load('steem_account_trasnfers.db', False)
-    vesting_transfers_db = pickledb.load('steem_account_vesting_transfers.db', False)
+    account_db = pickledb.load("golos_accounts.db", False)
+    votes_db = pickledb.load('golos_account_votes.db', False)
+    comments_db = pickledb.load('golos_account_comments.db', False)
+    transfers_db = pickledb.load('golos_account_trasnfers.db', False)
+    vesting_transfers_db = pickledb.load('golos_account_vesting_transfers.db', False)
     result_db = pickledb.load('result.db', False)
 
     steemd = Steem(STEEM_NODES)
