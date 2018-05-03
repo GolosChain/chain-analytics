@@ -209,7 +209,8 @@ class DelegationCheating2 extends DelegationCheating {
         let me = this, acc = me.acc;
         if (!r.stop && me.stage === 1 && acc.vp <= me.delegationPoint) {
             console.log(`${acc.name} passed delegation point ${me.delegationPoint} vp (actual: ${acc.vp})`);
-            this.delegate(1);
+            me.delegate(1);
+            r.mark = true;
         }
         return r;
     }
@@ -243,7 +244,7 @@ class DelegationCheating2 extends DelegationCheating {
 
 function testStrategy(strategy, acc, maxTime) {
     let iterations = 0;
-    let rshares = 0, seconds = 0, votes = 0, more = true;
+    let rshares = 0, seconds = 0, votes = 0, mark = false, more = true;
     strategy.init(acc);
     do {
         let r = strategy.iterate();
@@ -256,13 +257,23 @@ function testStrategy(strategy, acc, maxTime) {
         rshares += r.rshares;
         votes = r.votes;
         more = !r.stop;
+        if (r.mark) {
+            // mark delegation point for extended case
+            mark = {
+                delegatedAtSec: seconds,
+                remainigVests: acc.effectiveVests,
+                remainigVP: acc.vp
+            }
+            r.mark = false;
+        }
         if (++iterations > 1e4) return console.log('infinite loop? stop.');
     } while (more);
 
     return {
         rshares: rshares,
         seconds: seconds,
-        votes: votes
+        votes: votes,
+        mark: mark
     }
 }
 
@@ -300,6 +311,12 @@ function test2() {
         console.log('--------------------------------------------------------------------------------');
     }
 
+    // Extended case: let cheater1 continue to vote (in most effective way) after delegation
+    let r1 = r[1][2], mark = r1.mark;
+    let cheater1 = new Account('cheater1+', mark.remainigVests*1e6);
+    cheater1.vp = mark.remainigVP;
+    let rc = testStrategy(new MostEffectiveVoting(), cheater1, r1.seconds - mark.delegatedAtSec);
+
     console.log('================================================================================');
     for (type = 0; type < 3; type++) {
         let a = r[type];
@@ -308,6 +325,10 @@ function test2() {
         console.log(cheater, r1, secToDays(r1.seconds));
         console.log(voter, r2, secToDays(r2.seconds));
         console.log(`voter: 100%, ${cheater.name}: ${(r1.rshares/r2.rshares*10000|0)/100}%`);
+        if (type == 1) {
+            let ext = ((rc.rshares+r1.rshares)/r2.rshares*10000|0)/100;
+            console.log(`extended cheater1: ${ext}%`);
+        }
     }
 }
 
