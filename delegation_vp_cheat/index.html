@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="author" content="zxcat">
+<title>Delegation modelling</title>
+<!-- <script src="https://unpkg.com/golos-js@0.6.3/dist/golos.min.js"></script> -->
+<style>
+* {font-family: Arial, Helvetica, sans-serif}
+</style>
+</head><body>
+<h1>Delegation cheating model</h1>
+<label for="mgests"> MGests: <input type="text" value="1000000" id="mgests"/></label><br>
+<label for="days_exp"> Delegation expiring days: <input type="text" value="7" id="exp_days"/></label><br><br>
+<button onclick="test()">Start</button><br>
+<small><i>Check console to results</i></small>
+
+<script>
+function $(id) { return document.getElementById(id) }
+function input(id) { return $(id).value }
+function secToDays(sec) {
+    let s = sec % 60; sec = sec / 60 | 0;
+    let m = sec % 60; sec = sec / 60 | 0;
+    let h = sec % 24; sec = sec / 24 | 0;
+    if (s < 10) s = '0'+s;
+    if (m < 10) m = '0'+m;
+    return `${sec} days ${h}:${m}:${s}`
+}
+</script><script>
+'use strict';
+
+// Note: using `value | 0` trick to get integer part of value (caution: works only with 32-bit integers)
+
+const
+    GLS_100_PERCENT = 10000,
+    GLS = {
+        VOTE_REGENERATION_SECONDS: 5*60*60*24,  // 5 day
+        MIN_VOTE_INTERVAL_SECONDS: 3,
+        CASHOUT_WINDOW_SECONDS: 60*60*24*7,     // 1 week
+        DELEGATION_EXPIRING_SECONDS: 60*60*24*7,
+
+        VOTE_REGEN_PER_DAY: 40,                 // hardcoded in dynamic_global_property_object struct
+    };
+
+class Account {
+    constructor(name, vests) {
+        let me = this;
+        me.name = name !== undefined ? name : 'account';
+        me.vests = (vests || 0) / 1e6 | 0;      // use MGESTS to avoid 32-bit overflow
+        me.delegatedVests = 0;
+        me.receivedVests = 0;
+        me.vp = GLS_100_PERCENT;
+    }
+
+    // rshares for 100% vote weight
+    get rshares() {
+        return this.rsharesPrecise();
+    }
+
+    get effectiveVests() {
+        return this.vests - this.delegatedVests + this.receivedVests;
+    }
+
+    delegate(amount) {
+        this.delegatedVests += amount;
+    }
+    receive(amount) {
+        this.receivedVests += amount;
+    }
+
+    secToRegenerate(percents) {
+        if (percents === undefined) percents = GLS_100_PERCENT;
+        let toRegenerate = percents - this.vp;
+        return ((GLS.VOTE_REGENERATION_SECONDS / GLS_100_PERCENT * toRegenerate
+            + 2.8 | 0) / 3 | 0) * 3;    // rounding up and make it multiple of 3 seconds
+    }
+
+    rsharesPrecise(weight, secSincePrevVote, extendedReturn) {
+        if (weight === undefined) weight = GLS_100_PERCENT;
+        if (secSincePrevVote === undefined) secSincePrevVote = GLS.MIN_VOTE_INTERVAL_SECONDS;
+
+        let me = this;
+        let regenerated = (GLS_100_PERCENT * secSincePrevVote) / GLS.VOTE_REGENERATION_SECONDS | 0;
+        let currentPwr = Math.min(me.vp + regenerated, GLS_100_PERCENT);
+        let usedPwr = (currentPwr * weight) / GLS_100_PERCENT | 0;
+        let maxDenom = GLS.VOTE_REGEN_PER_DAY * GLS.VOTE_REGENERATION_SECONDS / (60 * 60 * 24) | 0;
+        usedPwr = (usedPwr + maxDenom - 1) / maxDenom | 0;
+
+        // let rshares = ((uint128_t(me.effectiveVests) * usedPwr) / (GLS_100_PERCENT)).to_uint64();
+        let rshares = me.effectiveVests * usedPwr / GLS_100_PERCENT | 0;
+        if (rshares <= 3e7 / 1e6) {
+            rshares = 0;
+            console.log(`${me.name}'s rshares too small to vote`);
+        }
+
+        return extendedReturn ? [rshares, usedPwr, regenerated] : rshares;
+    }
+
+    vote(weight, secSincePrevVote) {
+        if (secSincePrevVote === undefined) secSincePrevVote = 3;
+        let r = this.rsharesPrecise(weight, secSincePrevVote, true),
+            rs = r[0],
+            usedPwr = r[1],
+            regenerated = r[2]
+        this.vp += regenerated - usedPwr;
+        console.log(`${this.name} vote ${rs} rshares (after ${secSincePrevVote} seconds), new VP: ${this.vp}`);
+        return rs;
+    }
+}
+
+
+class Strategy {
+    init(acc) {
+        this.acc = acc;
+        this.votes = 0;
+    }
+    iterate() {
+        throw("Not implemented");
+    }
+}
+class MostEffectiveVoting extends Strategy {
+    init(acc) {
+        super.init(acc);
+        this.i = 0;
+    }
+    iterate() {
+        let wait = this.acc.secToRegenerate();
+        return {
+            rshares: this.acc.vote(GLS_100_PERCENT, wait),
+            seconds: wait,
+            votes: ++this.votes,
+            stop: this.i >= GLS.VOTE_REGEN_PER_DAY
+        };
+    }
+}
+
+class DelegationCheating extends Strategy {
+    init(acc) {
+        super.init(acc);
+        this.acc2 = new Account('accomplice', 0);
+        this.stage = 1;
+    }
+    iterate() {
+        let r = {}, acc = this.acc, acc2 = this.acc2;
+        // 1. fast voting
+        if (this.stage === 1) {
+            let wait = 3;
+            let rs = acc.vote(GLS_100_PERCENT, wait);
+            r.voted = rs > 0;
+            if (r.voted) {
+                r.rshares = rs;
+                r.seconds = wait;
+                r.votes = ++this.votes;
+            } else {
+                // Too low VP, delegate vests
+                this.stage++;
+                acc.delegate(acc.vests);
+                acc2.receive(acc.vests);
+                console.log('Out of VP, delegating');
+            }
+        }
+        // 2. fast voting again from delegatee
+        if (this.stage === 2) {
+            let rs = acc2.vote();
+            r.voted = rs > 0;
+            if (r.voted) {
+                r.rshares = rs;
+                r.seconds = 3;
+                r.votes = ++this.votes;
+            } else {
+                // Can't vote, return delegated vests and wait delegation expired
+                this.stage--;
+                acc.delegate(-acc.vests);
+                acc2.receive(-acc.vests);
+                r.rshares = 0;
+                r.seconds = GLS.DELEGATION_EXPIRING_SECONDS;
+                r.votes = this.votes;
+                r.stop = true;      // mark cycle end
+                console.log('Out of VP, return delegation and wait expirance');
+            }
+        }
+        return r;
+    }
+}
+
+function testStrategy(strategy, acc, maxTime) {
+    let iterations = 0;
+    let rshares = 0, seconds = 0, votes = 0, more = true;
+    strategy.init(acc);
+    do {
+        let r = strategy.iterate();
+        seconds += r.seconds;
+        if (maxTime && seconds >= maxTime) {
+            if (seconds == maxTime) rshares += r.rshares;
+            break;                                          // time was limited
+        }
+        rshares += r.rshares;
+        votes = r.votes;
+        more = !r.stop;
+        if (++iterations > 1e4) return console.log('infinite loop? stop.');
+    } while (more);
+
+    return {
+        rshares: rshares,
+        seconds: seconds,
+        votes: votes
+    }
+}
+
+function test() {
+    const gests = input('mgests') * 1e6;
+    const expDays = input('exp_days');
+    if (expDays*1) {
+        GLS.DELEGATION_EXPIRING_SECONDS = 60*60*24 * expDays;
+    }
+
+    let cheater = new Account('cheater', gests);
+    let r1 = testStrategy(new DelegationCheating(), cheater);
+
+    let voter = new Account('voter', gests);
+    let r2 = testStrategy(new MostEffectiveVoting(), voter, r1.seconds);
+
+    console.log(cheater, r1, secToDays(r1.seconds));
+    console.log(voter, r2, secToDays(r2.seconds));
+    console.log(`voter: 100%, cheater: ${(r1.rshares/r2.rshares*10000|0)/100}%`);
+}
+
+</script>
+
+</body></html>
