@@ -8,13 +8,19 @@
 <!-- <script src="https://unpkg.com/golos-js@0.6.3/dist/golos.min.js"></script> -->
 <style>
 * {font-family: Arial, Helvetica, sans-serif}
+small {font-size:70%; color:#777}
 </style>
 </head><body>
 <h1>Delegation cheating model</h1>
-<label for="mgests"> MGests: <input type="text" value="1000000" id="mgests"/></label><br>
-<label for="days_exp"> Delegation expiring days: <input type="text" value="7" id="exp_days"/></label><br><br>
-<button onclick="test()">Start</button><br>
-<small><i>Check console to results</i></small>
+<label for="mgests" title="Account MGESTS"> MGests:
+    <input type="text" value="1000000" id="mgests"/></label><br>
+<label for="days_exp" title="Time in days to return delegation"> Delegation expiring days:
+    <input type="text" value="7" id="exp_days"/></label><br><br>
+<label for="delegate_at" title="At which VP % cheater will delegate"> Delegation point, VP %:
+    <input type="text" value="50" id="delegate_at"/></label><br><br>
+<button onclick="test()">Test Simple</button>
+<button onclick="test2()">Test Fixes</button><br>
+<small>Check console for results</small>
 
 <script>
 function $(id) { return document.getElementById(id) }
@@ -104,11 +110,11 @@ class Account {
             usedPwr = r[1],
             regenerated = r[2]
         this.vp += regenerated - usedPwr;
-        console.log(`${this.name} vote ${rs} rshares (after ${secSincePrevVote} seconds), new VP: ${this.vp}`);
+        if (rs > 0)
+            console.log(`${this.name} vote ${rs} rshares (after ${secSincePrevVote} seconds), new VP: ${this.vp}`);
         return rs;
     }
 }
-
 
 class Strategy {
     init(acc) {
@@ -145,7 +151,7 @@ class DelegationCheating extends Strategy {
         let r = {}, acc = this.acc, acc2 = this.acc2;
         // 1. fast voting
         if (this.stage === 1) {
-            let wait = 3;
+            let wait = acc.vp === 10000 ? 0 : 3;
             let rs = acc.vote(GLS_100_PERCENT, wait);
             r.voted = rs > 0;
             if (r.voted) {
@@ -153,11 +159,8 @@ class DelegationCheating extends Strategy {
                 r.seconds = wait;
                 r.votes = ++this.votes;
             } else {
-                // Too low VP, delegate vests
-                this.stage++;
-                acc.delegate(acc.vests);
-                acc2.receive(acc.vests);
-                console.log('Out of VP, delegating');
+                console.log(`${acc.name} out of VP`);
+                this.delegate(1);
             }
         }
         // 2. fast voting again from delegatee
@@ -170,17 +173,71 @@ class DelegationCheating extends Strategy {
                 r.votes = ++this.votes;
             } else {
                 // Can't vote, return delegated vests and wait delegation expired
-                this.stage--;
-                acc.delegate(-acc.vests);
-                acc2.receive(-acc.vests);
+                console.log(`${acc2.name} out of VP`);
+                this.delegate(-1);
                 r.rshares = 0;
                 r.seconds = GLS.DELEGATION_EXPIRING_SECONDS;
                 r.votes = this.votes;
                 r.stop = true;      // mark cycle end
-                console.log('Out of VP, return delegation and wait expirance');
             }
         }
         return r;
+    }
+    // direction should be either 1 or -1
+    delegate(direction) {
+        let acc = this.acc, acc2 = this.acc2;
+        this.stage += direction;
+        let amount = direction > 0 ? acc.vests : acc2.receivedVests;
+        acc.delegate(direction * amount);
+        acc2.receive(direction * amount);
+        if (direction > 0) {
+            console.log(`Delegating ${amount} GESTS from ${acc.name} to ${acc2.name}`);
+        } else {
+            console.log(`Return delegation, ${amount} GESTS`);
+        }
+    }
+}
+
+class DelegationCheating2 extends DelegationCheating {
+    constructor(fixType, delegationPoint) {
+        super();
+        this.fixType = fixType;
+        this.delegationPoint = delegationPoint * 100 | 0;
+    }
+    iterate() {
+        let r = super.iterate();
+        let me = this, acc = me.acc;
+        if (!r.stop && me.stage === 1 && acc.vp <= me.delegationPoint) {
+            console.log(`${acc.name} passed delegation point ${me.delegationPoint} vp (actual: ${acc.vp})`);
+            this.delegate(1);
+        }
+        return r;
+    }
+    delegate(direction) {
+        let me = this, fixType = me.fixType;
+        if (direction < 0 || fixType == 0) {
+            super.delegate(direction);
+        } else {
+            let delegator = me.acc, delegatee = me.acc2;
+            switch (fixType) {
+            case 1:
+                // Limit allowed delegation depending on VP
+                this.stage++;
+                let amount = delegator.vests * delegator.vp / GLS_100_PERCENT | 0;  // max allowed to delegate
+                delegator.delegate(amount);
+                delegatee.receive(amount);
+                console.log(`Delegating max allowed ${amount} GESTS from ${delegator.name} to ${delegatee.name}`);
+                break;
+            case 2:
+                // Patch VP of delegatee
+                super.delegate(direction);
+                let oldVp = delegatee.vp;
+                delegatee.vp = (delegator.vests * delegator.vp + delegatee.vests * delegatee.vp) /
+                    (delegator.vests + delegatee.vests) | 0;
+                console.log(`Fix deelgatee VP from ${oldVp} to ${delegatee.vp}`);
+                break;
+            }
+        }
     }
 }
 
@@ -193,6 +250,7 @@ function testStrategy(strategy, acc, maxTime) {
         seconds += r.seconds;
         if (maxTime && seconds >= maxTime) {
             if (seconds == maxTime) rshares += r.rshares;
+            else seconds -= r.seconds;
             break;                                          // time was limited
         }
         rshares += r.rshares;
@@ -208,22 +266,49 @@ function testStrategy(strategy, acc, maxTime) {
     }
 }
 
-function test() {
+function initTest(type) {
+    if (type === undefined) type = '';
     const gests = input('mgests') * 1e6;
     const expDays = input('exp_days');
     if (expDays*1) {
         GLS.DELEGATION_EXPIRING_SECONDS = 60*60*24 * expDays;
     }
+    let cheater = new Account('cheater'+type, gests);
+    let voter = new Account('voter'+type, gests);
+    return {cheater:cheater, voter:voter};
+}
 
-    let cheater = new Account('cheater', gests);
-    let r1 = testStrategy(new DelegationCheating(), cheater);
+function test() {
+    // simple
+    let ini = initTest();
+    let r1 = testStrategy(new DelegationCheating(), ini.cheater);
+    let r2 = testStrategy(new MostEffectiveVoting(), ini.voter, r1.seconds);
 
-    let voter = new Account('voter', gests);
-    let r2 = testStrategy(new MostEffectiveVoting(), voter, r1.seconds);
-
-    console.log(cheater, r1, secToDays(r1.seconds));
-    console.log(voter, r2, secToDays(r2.seconds));
+    console.log(ini.cheater, r1, secToDays(r1.seconds));
+    console.log(ini.voter, r2, secToDays(r2.seconds));
     console.log(`voter: 100%, cheater: ${(r1.rshares/r2.rshares*10000|0)/100}%`);
+}
+
+function test2() {
+    // with delegation point
+    let r = [], delegateAt = input('delegate_at');
+    for (var type = 0; type < 3; type++) {
+        let ini = initTest(type);
+        let r1 = testStrategy(new DelegationCheating2(type, delegateAt), ini.cheater);
+        let r2 = testStrategy(new MostEffectiveVoting(), ini.voter, r1.seconds);
+        r.push([ini.cheater, ini.voter, r1, r2]);
+        console.log('--------------------------------------------------------------------------------');
+    }
+
+    console.log('================================================================================');
+    for (type = 0; type < 3; type++) {
+        let a = r[type];
+        let cheater = a[0], voter = a[1], r1 = a[2], r2 = a[3];
+        console.log(`Testing fix ${type} (${['None','Delegaion Limit','VP patch'][type]}) with delegation at ${delegateAt}% vp`);
+        console.log(cheater, r1, secToDays(r1.seconds));
+        console.log(voter, r2, secToDays(r2.seconds));
+        console.log(`voter: 100%, ${cheater.name}: ${(r1.rshares/r2.rshares*10000|0)/100}%`);
+    }
 }
 
 </script>
