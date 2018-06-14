@@ -41,5 +41,13 @@ total_posts: {
 $sum: "$is_root" 
 } 
 } 
+}, { 
+$project: { 
+total: 1, 
+total_posts: 1, 
+total_comments: { 
+$subtract: ["$total", "$total_posts"] 
+} 
+} 
 } 
 ])
