@@ -1,0 +1,94 @@
+<?xml version="1.0"?>
+<settings>
+ <main threads="4" rulesLimit="2" copies="2"/>
+ <environment passesNum="100000000000" articlesNum="15" usersNum="97" articlesPeriod="5"/>
+ <display enable="1" period="500000">
+  <strat console="0" zoomInBorder="0.07" zoomOutFactor="1.5" pointType="7"/>                            
+  <probs console="0" heatmap="1" pointsNum="30" zoomInBorder="0.07" zoomOutFactor="1.5" pointType="0"/> 
+ </display>
+  <population>
+  <init stratsNum="80" clansNum="4"/>
+  <run iterSize="150" elit="0.25" migrationRate="0.05"/>
+     <migrationProb>
+    <_0 operaton="push" arg="d"/>
+    <_1 operaton="const" a="0.01"/>
+    <_2 operaton="mul"/>
+   </migrationProb>  
+ </population>
+ <article ratingLnFactor="2.0" passesLnFactor="0.2">
+   <properties>
+    <_0 distribution="uniform" min="0.0" max="1.0"/>
+    <_1 distribution="uniform" min="0.0" max="1.0"/>
+   </properties>
+ </article>
+ <user charge="3.0" straightforwardFactorPower="3.0" maxPasses="20">
+   <skill distribution="uniform" min="0.0" max="1.0"/>
+   <stack1 distribution="constant" val="1.0"/>
+   <stack distribution="pareto" alpha="1.16" Xm = "0.005"/>
+   <taste>
+    <_0 distribution="halfNormal" stddev="0.03"/>
+    <_1 distribution="uniform" min="0.0" max="1.0"/>
+   </taste>
+   <stackGroupBorders min="0.005"/>
+   <stackGroupBorders1 min="0.005" _0="0.008" _1="0.02"/>
+ </user>
+ <strat>   
+  <init>
+    <phenotype_0>
+    <displ  distribution="uniform" min="-1.0" max="1.0"/>     
+    <feature_0 type="PASSES_LN">
+     <factor distribution="uniform" min="-1.0"  max="1.0"/>
+     <bend  distribution="uniform" min="-2.0"  max="2.0"/>
+    </feature_0>
+    <feature_1 type="RATING_LN">
+     <factor distribution="uniform" min="-1.0"  max="1.0"/>
+     <bend  distribution="uniform" min="-2.0"  max="2.0"/>
+    </feature_1> 
+   </phenotype_0>
+   <phenotype_1>
+    <displ  distribution="uniform" min="-1.0" max="1.0"/>     
+    <feature_0 type="TASTE_DIST">
+     <factor distribution="uniform" min="-1.0"  max="1.0"/>
+     <bend  distribution="uniform" min="-2.0"  max="2.0"/>
+    </feature_0>
+    <feature_1 type="RATING_LN">
+     <factor distribution="uniform" min="-1.0"  max="1.0"/>
+     <bend  distribution="uniform" min="-2.0"  max="2.0"/>
+    </feature_1> 
+   </phenotype_1>   
+  </init>
+  <breed pnxProb="0.95" normalD="0.5" uniformD="0.8" limit="5.0"/>
+  <mutation prob="0.05">
+   <displ  distribution="uniform" min="-0.02" max="0.02"/>
+   <factor distribution="uniform" min="-0.02" max="0.02"/>
+   <bend  distribution="uniform" min="-0.02"  max="0.02"/>
+  </mutation>
+ </strat> 
+ <squelch centralPointsNum="5" expMoving="0.02">     
+  <extDistFactors  _0="1000.0" _1="300000.0" _2="10000" _3="100000"/>
+ </squelch>
+ <report period="50000000"/>
+ <rules>     
+  <_0 straightforwardProb="0.05">
+    <acticleReward>
+    <_0 operaton="push" arg="r"/>
+    <_1 operaton="pow" p="2.0"/>
+   </acticleReward>
+   <curatorsImpact>
+    <_0 operaton="push" arg="r"/>
+    <_1 operaton="pow" p="0.5"/>
+   </curatorsImpact>
+  </_0>
+    <_1 straightforwardProb="0.20">
+    <acticleReward>
+    <_0 operaton="push" arg="r"/>
+    <_1 operaton="pow" p="3.0"/>
+   </acticleReward>
+   <curatorsImpact>
+    <_0 operaton="push" arg="r"/>
+    <_1 operaton="pow" p="0.5"/>
+   </curatorsImpact>
+  </_1>
+   
+ </rules>
+</settings>
